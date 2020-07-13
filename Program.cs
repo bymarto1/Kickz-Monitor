@@ -28,8 +28,14 @@ namespace kickzmonitor
             var path = Path.Combine(Directory.GetCurrentDirectory(), "proxies.txt");
             string[] proxys = System.IO.File.ReadAllLines(path);
             Console.WriteLine(path);
+
             path = Path.Combine(Directory.GetCurrentDirectory(), "products.txt");
             string[] productsUrls = System.IO.File.ReadAllLines(path);
+
+            path = Path.Combine(Directory.GetCurrentDirectory(), "webhook.txt");
+            string[] webhooks = System.IO.File.ReadAllLines(path);
+
+            Globals.webhook = webhooks[0];
 
 
             Random r = new Random();
@@ -54,6 +60,7 @@ namespace kickzmonitor
         static class Globals
         {
             public static int delay;
+            public static string webhook;
         }
 
         static async Task MonitorLink(string url, Proxy proxy)
@@ -101,6 +108,8 @@ namespace kickzmonitor
             client.DefaultRequestHeaders.Add("accept-encoding", "gzip, deflate, br");
             client.DefaultRequestHeaders.Add("accept-language", "ca-ES,ca;q=0.9");
             client.DefaultRequestHeaders.Add("Cache-Control", "max-age=0");
+            client.DefaultRequestHeaders.Add("Pragma", "max-age=0");
+
             client.DefaultRequestHeaders.Add("sec-fetch-dest", "document");
             client.DefaultRequestHeaders.Add("Connection", "keep-alive");
 
@@ -144,93 +153,102 @@ namespace kickzmonitor
 
                 sourcecode = await POST(url, client);   //post because get request uses cache and won't let update source
                 
-
+                
                 var doc = new HtmlDocument();
                 //Console.WriteLine(sourcecode);
-                doc.LoadHtml(sourcecode);
 
-
-                if (first)    //searching the image and the product name of the shoe
+                if (sourcecode.Contains("Access Denied") || sourcecode.Contains("Invalid Url"))
                 {
-                    name = new Regex("prodNameId\">(.+?)<").Match(sourcecode).Groups[1].Value;       
-                    image = new Regex("class=\"productDetailZoom\" src=\"(.+?)\"").Match(sourcecode).Groups[1].Value;
-
-                    //Console.WriteLine(sourcecode);
-                   // Console.WriteLine(image);
-                }
-
-                Console.WriteLine("{0}searching sizes...",name);
-
-                if (! sourcecode.Contains("chooseSizeLinkContainer active")) //if doesn't contain these its sold out
-                {
-                    Console.WriteLine("OOS");   
+                    Console.WriteLine("ACCESS DENIED");
                 }
                 else
                 {
-                    var eucontainer = doc.DocumentNode.SelectNodes("//*[@id='1SizeContainer']").First();  
-                   // Console.WriteLine(eucontainer.InnerHtml);
-                    Regex rgx = new Regex("data-size=\"(.*?)\"");
-                    //Console.WriteLine(eucontainer.InnerHtml);
-                    int j = 0;
-                    foreach (Match match in rgx.Matches(eucontainer.InnerHtml))
+
+                    doc.LoadHtml(sourcecode);
+
+
+
+                    if (first)    //searching the image and the product name of the shoe
                     {
-                        Console.WriteLine("Found '{0}' at position {1}", match.Value, match.Index);
-                        sizes[j] = match.Groups[1].Value;
-                        ++j;
+                        name = new Regex("prodNameId\">(.+?)<").Match(sourcecode).Groups[1].Value;
+                        image = new Regex("class=\"productDetailZoom\" src=\"(.+?)\"").Match(sourcecode).Groups[1].Value;
+
+                        //Console.WriteLine(sourcecode);
+                        // Console.WriteLine(image);
+                    }
+
+                    Console.WriteLine("{0}searching sizes...", name);
+
+                    if (!sourcecode.Contains("chooseSizeLinkContainer active")) //if doesn't contain these its sold out
+                    {
+                        Console.WriteLine("OOS");
+                    }
+                    else
+                    {
+                        var eucontainer = doc.DocumentNode.SelectNodes("//*[@id='1SizeContainer']").First();
+                        // Console.WriteLine(eucontainer.InnerHtml);
+                        Regex rgx = new Regex("data-size=\"(.*?)\"");
+                        //Console.WriteLine(eucontainer.InnerHtml);
+                        int j = 0;
+                        foreach (Match match in rgx.Matches(eucontainer.InnerHtml))
+                        {
+                            Console.WriteLine("Found '{0}' at position {1}", match.Value, match.Index);
+                            sizes[j] = match.Groups[1].Value;
+                            ++j;
+
+                        }
+                    }
+
+                    for (int i = 0; i < 15; ++i)
+                    {
+                        if (sizes[i] != "")
+                        {
+                            Console.WriteLine("Talla'{0}' at position {1}",
+                                                 sizes[i], i);
+                        }
+                    }
+
+
+                    if (!first)
+                    {
+                        Console.WriteLine("Comparing...");
+                        bool equal = Enumerable.SequenceEqual(sizes, oldsizes);
+                        Console.WriteLine(equal);
+                        if (!equal)
+                        {
+                            Console.WriteLine("RESTOCK!!");
+                            await Discord(name, image, url, sizes);
+
+                        }
+                    }
+
+
+                    //the commented code right here is for debuggin purposes
+                    /*
+                    Console.WriteLine("--------old--------");
+
+
+                    for (int i = 0; i < oldsizes.Length; ++i)
+                    {
+                        Console.WriteLine(oldsizes[i]);
+                    }
+                    Console.WriteLine("-------new-------");
+
+                    for (int i = 0; i < sizes.Length; ++i)
+                    {
+                        Console.WriteLine(sizes[i]);
 
                     }
+
+                    */
+
+
+                    // await Discord(name, image, url , sizes); //just for testing the webhook , remove when done
+
+
+                    System.Threading.Thread.Sleep(Globals.delay);
+                    first = false;
                 }
-              
-                for (int i = 0; i < 15; ++i)
-                {
-                    if (sizes[i] != "")
-                    {
-                        Console.WriteLine("Talla'{0}' at position {1}",
-                                             sizes[i], i);
-                    }
-                }
-                
-
-                if (!first)
-                {
-                    Console.WriteLine("Comparing...");
-                    bool equal = Enumerable.SequenceEqual(sizes, oldsizes);
-                    Console.WriteLine(equal);
-                    if (!equal)
-                    {
-                        Console.WriteLine("RESTOCK!!");
-                        await Discord(name, image, url, sizes);
-
-                    }
-                }
-
-
-                //the commented code right here is for debuggin purposes
-                /*
-                Console.WriteLine("--------old--------");
-
-
-                for (int i = 0; i < oldsizes.Length; ++i)
-                {
-                    Console.WriteLine(oldsizes[i]);
-                }
-                Console.WriteLine("-------new-------");
-
-                for (int i = 0; i < sizes.Length; ++i)
-                {
-                    Console.WriteLine(sizes[i]);
-
-                }
-
-                */
-
-
-                // await Discord(name, image, url , sizes); //just for testing the webhook , remove when done
-
-
-                System.Threading.Thread.Sleep(Globals.delay);
-                first = false;
-
             }
 
         }
@@ -286,8 +304,8 @@ namespace kickzmonitor
 
             public static async Task Discord(string productname, string imageurl, string url, string[] sizes)
             {
-                string msg = "-"+ "\r\n";
-                using (var client = new DiscordWebhookClient("https://discordapp.com/api/webhooks/730434133922152508/6fEhZguwXC4hPvbKUh_g0XUMXeQJeTMjTwAP5R0bX9TzRbaHGftXdy1In9frcj0IGL3u"))
+                string msg = "";
+                using (var client = new DiscordWebhookClient(Globals.webhook))
                 {
                     for (int i = 0; i < sizes.Length; ++i)
                     {
@@ -297,6 +315,8 @@ namespace kickzmonitor
                         }
 
                     }
+                    if (msg =="")  msg = "-" + "\r\n";
+
                     var embed = new Discord.EmbedBuilder
                     {
                         //Description = msg,
