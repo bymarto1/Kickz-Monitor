@@ -5,6 +5,7 @@ Actually deprecated but it helped me improve my C# and web scrapinig skills.
 
 
 //Old Readme
+
 Add urls to products.txt, one url each line 
 
 Add proxies to proxies.txt one each line ip:port:username:password
